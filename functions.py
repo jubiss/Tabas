@@ -1,5 +1,8 @@
 import pandas as pd
 def merge_data():
+    '''
+    União dos dados de localização com a base
+    '''
     geo_data = pd.read_csv('geo_data.csv')
     geo_data.rename(columns={'id':'location_id'},inplace=True)
     app = pd.read_csv('apartments.csv')
@@ -7,6 +10,9 @@ def merge_data():
     return final_df
 
 def pre_processing(df):
+    '''
+    Pré-processamento dos dados para uso no modelo
+    '''
     df = df[df['latitude'].isnull()==False]
     df = df[df['bedrooms']!=0]
     df['price_month'] = df['price_month'].str[3:]
@@ -14,6 +20,9 @@ def pre_processing(df):
     return df
 
 def remove_diff_columns(train,test):
+    '''
+    Remoção de colunas diferentes em train e test
+    '''
     train_column = train.columns.values.tolist()
     test_column = test.columns.values.tolist()
     not_in_train = [i for i in test_column if i not in train_column]
@@ -24,6 +33,9 @@ def remove_diff_columns(train,test):
     return train,test
 
 def bairro(X_train,X_test ,y_train, train_rf=False):
+    '''
+    Gera as variáveis 'bairro faixa' (Valorização dos bairros) e dummy variables com os bairros com mais dados.
+    '''
     X_train['preco_m2'] = y_train/X_train['sqm']
 
     bairro = X_train.groupby('bairro').mean()
@@ -49,6 +61,9 @@ def bairro(X_train,X_test ,y_train, train_rf=False):
 
 
 def find_outliers_turkey(x):
+    '''
+    Encontra outliers utilizando distancia interquartil
+    '''
     import numpy as np
     q1 = np.percentile(x, 25)
     q3 = np.percentile(x, 75)
@@ -60,6 +75,15 @@ def find_outliers_turkey(x):
     return outlier_indicies#, outlier_values
 
 def model_validation(df,space_xgb,space_random,train_rf=False,plot = True,com_localizacao=True):
+    '''
+    Realiza a validação do modelo.
+    df -> Dados utilizados,
+    space_xgb -> Parametros a serem otimizados no xgboost
+    space_random -> Parametros a serem otimizados na Random Forest
+    train_rf -> Se deve treinar modelo de Random Forest para servir como Benchmark
+    plot -> Plota distribuição de erros.
+    com_localizacao -> Defini se variáveis de localização serão adicionadas.
+    '''
     import numpy as np
     from skopt import dummy_minimize
     from sklearn.metrics import mean_squared_error, mean_absolute_error
@@ -71,7 +95,7 @@ def model_validation(df,space_xgb,space_random,train_rf=False,plot = True,com_lo
     #Parametros
     X = df[['sqm', 'bedrooms','bairro']]
     y = df['price_month']
-    n_calls_hyp = 40
+    n_calls_hyp = 2
     rmse = []
     mae = []
     mape = []
@@ -119,7 +143,7 @@ def model_validation(df,space_xgb,space_random,train_rf=False,plot = True,com_lo
         xgbreg = xgb_reg.fit(X_train,y_train)
         xgb_pred = xgbreg.predict(X_test)
         xgb_pred_2 = xgbreg.predict(X_train)
-        
+    #Modelo de Random Forest para benchmark
         def random_forest_on(squared_rf,absolut_rf):
             def treina_random_forest(params):
                 max_depth = params[0]
@@ -170,6 +194,7 @@ def model_validation(df,space_xgb,space_random,train_rf=False,plot = True,com_lo
     return pd.DataFrame.from_dict(results_dic)
 
 def final_model(df,df_pred,param_xgb,com_localizacao=True):
+    #Modelo final para gerar previsões.
     from eli5 import show_weights, show_prediction
     from eli5.sklearn import PermutationImportance    
     import xgboost as xgb
@@ -188,6 +213,8 @@ def final_model(df,df_pred,param_xgb,com_localizacao=True):
     xgbreg = xgb_reg.fit(X,y)
     pred = xgbreg.predict(X_test)
     
+    
+    # Explicação do modelo utilizando o eli5
     perm = PermutationImportance(xgbreg, scoring = 'neg_mean_absolute_error').fit(X, y)
     weights = show_weights(perm, feature_names = list(X_test.columns))
     show_1 = show_prediction(xgbreg,X_test.iloc[0],show_feature_values=True)
